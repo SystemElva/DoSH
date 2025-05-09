@@ -350,17 +350,25 @@ initialize_project() {
         WANTED_LANGUAGE_VERSION="0.14.0"
     fi
 
+    HAD_BUILD_FOLDER_ON_ENTRY=1
     if [[ ! -d "$HERE/.build" ]];
     then
+        HAD_BUILD_FOLDER_ON_ENTRY=0
         mkdir $HERE/.build
         echo -e "cache\n" > $HERE/.build/.gitignore
     fi
 
-    fetch_version
+    fetch_version $WANTED_LANGUAGE_VERSION
 
     if [[ $? != 0 ]];
     then
         echo "error: failed downloading zig compiler."
+
+        if [[ $HAD_BUILD_FOLDER_ON_ENTRY == 0 ]];
+        then
+            rm -r $HERE/.build
+        fi
+
         return
     fi
 
