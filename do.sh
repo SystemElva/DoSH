@@ -242,23 +242,97 @@ ini() {
 
 
 
+construct_version_link_on_linux() {
+    MACHINE_TYPE=$(uname -m)
+
+    case $MACHINE_TYPE in
+        "x86" | "x86_64" | "riscv64" | "armv7a" | "aarch64" | "loongarch64") ;;
+
+        *)
+            echo "error: unsupported architecture ($MACHINE_TYPE)."
+            exit -1
+            ;;
+    esac
+
+    echo "https://ziglang.org/download/$1/zig-linux-$MACHINE_TYPE-$1.tar.xz"
+}
+
+construct_version_link_on_darwin() {
+    MACHINE_TYPE=$(uname -m)
+
+    # This check only exists for completeness.
+    # Most users of Darwin-based operating systems use aarch64-based systems,
+    # while some still use x86_64. Virtually none use PowerPC anymore.
+    case $MACHINE_TYPE in
+        "aarch64" | "x86_64") ;;
+
+        *)
+            echo "error: unsupported machine architecture ($MACHINE_TYPE)"
+            exit -1
+            ;;
+    esac
+
+    echo "https://ziglang.org/download/$1/zig-macos-$MACHINE_TYPE-$1.tar.xz"
+}
+
+construct_version_link_on_freebsd() {
+    MACHINE_TYPE=$(uname -m)
+
+    case $MACHINE_TYPE in
+        "x86_64") ;;
+
+        *)
+            echo "error: only x86_64 is supported on freebsd."
+            exit -1
+            ;;
+    esac
+
+    echo "https://ziglang.org/download/$1/zig-freebsd-$MACHINE_TYPE-$1.tar.xz"
+}
+
+construct_version_link() {
+    KERNEL_NAME=$(uname -s)
+
+    case $KERNEL_NAME in
+        "Linux")
+            construct_version_link_on_linux $1
+            ;;
+        "Darwin")
+            construct_version_link_on_darwin $1
+            ;;
+        "FreeBSD")
+            construct_version_link_on_freebsd $1
+            ;;
+    esac
+}
+
 fetch_version() {
-    LANGUAGE_VERSION=$(ini -g Project:Language-Version $HERE/.build/manifest.ini)
     VERSIONS_PATH=$HERE/.build/cache/versions
 
-    if [[ ! -d "$VERSIONS_PATH/$LANGUAGE_VERSION" ]];
+    if [[ ! -d "$VERSIONS_PATH/$1" ]];
     then
         mkdir -p $HERE/.build/cache/download/versions/
-        mkdir -p $VERSIONS_PATH/$LANGUAGE_VERSION
 
+        # Downlaod the comiler of that version
         cd $HERE/.build/cache/download/versions
-        wget -O  zig.tar.xz https://ziglang.org/download/$LANGUAGE_VERSION/zig-linux-x86_64-${LANGUAGE_VERSION}.tar.xz
+        wget -O  zig.tar.xz $(construct_version_link $1) -q
+
+        if [[ $? != 0 ]];
+        then
+            return 1
+        fi
+
+
+        # Unpack the compiler to the versions directory
+        mkdir -p $VERSIONS_PATH/$1
         xz -d zig.tar.xz
-        tar --strip-components=1 -xf zig.tar -C $HERE/.build/cache/versions/$LANGUAGE_VERSION
+        tar --strip-components=1 -xf zig.tar -C $HERE/.build/cache/versions/$1
         rm -r $HERE/.build/cache/download/versions
         cd $HERE
     fi
 }
+
+
 
 initialize_project() {
     printf "Project Name: "
@@ -282,17 +356,29 @@ initialize_project() {
         echo -e "cache\n" > $HERE/.build/.gitignore
     fi
 
+    fetch_version
+
+    if [[ $? != 0 ]];
+    then
+        echo "error: failed downloading zig compiler."
+        return
+    fi
+
     echo "[Project]" > $HERE/.build/manifest.ini
     echo "Project-Name = \"$PROJECT_NAME\"" >> $HERE/.build/manifest.ini
     echo "Language-Version = \"$WANTED_LANGUAGE_VERSION\"" >> $HERE/.build/manifest.ini
 
-    fetch_version
-
-    $HERE/.build/cache/versions/$WANTED_LANGUAGE_VERSION/zig $@
-
     echo ".zig-cache" >> $HERE/.gitignore
     echo "zig-out" >> $HERE/.gitignore
+
+    $HERE/.build/cache/versions/$WANTED_LANGUAGE_VERSION/zig $@
 }
+
+if [[ $# -lt 1 ]];
+then
+    echo "error: no action given. try: $0 init"
+    exit -1
+fi
 
 case "$1" in
     "init")
